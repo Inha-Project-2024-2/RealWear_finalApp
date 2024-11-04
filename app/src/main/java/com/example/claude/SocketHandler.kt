@@ -1,5 +1,6 @@
 // SocketHandler.kt
 
+import android.util.Log
 import io.socket.client.IO
 import io.socket.client.Socket
 import org.json.JSONObject
@@ -23,11 +24,13 @@ class SocketHandler private constructor() {
         socket?.connect()
 
         socket?.on(Socket.EVENT_CONNECT) {
+            Log.d("Socket", "Connected to signaling server")
             socket?.emit("register", userId)
             callback(true)
         }
 
         socket?.on(Socket.EVENT_CONNECT_ERROR) {
+
             callback(false)
         }
     }
@@ -42,12 +45,14 @@ class SocketHandler private constructor() {
         onIceCandidate: (String, String) -> Unit
     ) {
         socket?.on("call-received") { args ->
+            Log.d("Socket", "Call received event: ${args.contentToString()}")
             val data = args[0] as JSONObject
             val callerId = data.getString("callerId")
             onCallReceived(callerId)
         }
 
         socket?.on("call-accepted") { args ->
+            Log.d("Socket", "Call accepted event: ${args.contentToString()}")
             val data = args[0] as JSONObject
             val accepterId = data.getString("accepterId")
             onCallAccepted(accepterId)
@@ -66,6 +71,7 @@ class SocketHandler private constructor() {
         }
 
         socket?.on("offer") { args ->
+            Log.d("Socket", "Offer received event: ${args.contentToString()}")
             val data = args[0] as JSONObject
             val callerId = data.getString("callerId")
             val offer = data.getString("offer")
@@ -73,6 +79,7 @@ class SocketHandler private constructor() {
         }
 
         socket?.on("answer") { args ->
+            Log.d("Socket", "Answer received event: ${args.contentToString()}")
             val data = args[0] as JSONObject
             val answererId = data.getString("answererId")
             val answer = data.getString("answer")
@@ -80,6 +87,7 @@ class SocketHandler private constructor() {
         }
 
         socket?.on("ice-candidate") { args ->
+            Log.d("Socket", "ICE candidate received: ${args.contentToString()}")
             val data = args[0] as JSONObject
             val senderId = data.getString("senderId")
             val candidate = data.getString("candidate")
