@@ -2,6 +2,7 @@ package com.example.claude
 // MainActivity.kt
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -196,7 +197,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun connectToSignalingServer() {
         val userId = UUID.randomUUID().toString()
-        socketHandler.init("http://10.0.2.2:3000")
+
+        if (Build.FINGERPRINT.contains("generic")) {
+            // 에뮬레이터
+            socketHandler.init("http://10.0.2.2:3000")
+        } else {
+            // 실제 기기에서 호스트 IP 주소
+            socketHandler.init("http://165.246.149.119:3000")
+        }
+
+
+
         socketHandler.connect(userId) { success ->
             runOnUiThread {
                 if (success) {

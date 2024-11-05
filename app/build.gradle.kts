@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.claude"
-        minSdk = 30
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -68,7 +68,7 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    implementation(files("/Users/inderby/StudioProjects/LastDance/app/libwebrtc.aar"))
+    implementation(files("./libwebrtc.aar"))
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation ("com.google.android.material:material:1.9.0")
