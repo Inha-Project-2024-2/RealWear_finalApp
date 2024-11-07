@@ -1,39 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.claude">
-
     <!-- 필수 권한 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-
-    <!-- WebRTC는 카메라 기능이 필수이므로 카메라 없는 기기 제외 -->
-    <uses-feature android:name="android.hardware.camera" android:required="true" />
-    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
-    <uses-feature android:name="android.hardware.microphone" android:required="true" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" /> <!-- WebRTC는 카메라 기능이 필수이므로 카메라 없는 기기 제외 -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="true" />
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="true" />
 
     <application
         android:allowBackup="true"
+        android:exported="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:exported="true"
         android:theme="@style/Theme.AppCompat"
-        android:usesCleartextTraffic="true">  <!-- HTTP 통신 허용 (개발용. 실제 서비스는 HTTPS 사용 권장) -->
-
+        android:usesCleartextTraffic="true">
         <activity
-            android:name="MainActivity"
-            android:exported="true"
-            android:keepScreenOn="true">  <!-- 화상통화 중 화면 꺼짐 방지 -->
+            android:name=".ContactListActivity"
+            android:screenOrientation="landscape"
+            android:exported="true" />
+        <activity
+            android:name=".LoginActivity"
+            android:screenOrientation="landscape"
+            android:exported="true"> <!-- 시작 화면으로 설정 -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
+        <activity
+            android:name=".MainActivity"
+            android:screenOrientation="landscape"
+            android:exported="true"
+            android:keepScreenOn="true">
+            <!-- 화상통화 중 화면 꺼짐 방지 -->
+        </activity>
     </application>
 
 </manifest>

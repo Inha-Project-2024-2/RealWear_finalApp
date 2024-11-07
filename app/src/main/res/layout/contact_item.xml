@@ -7,14 +7,14 @@
     android:paddingVertical="20dp">
 
     <ImageView
-        android:id="@+id/userPorfile"
+        android:id="@+id/contactIcon"
         android:layout_width="30dp"
         android:layout_height="30dp"
         android:src="@drawable/humanicon"
         />
 
     <TextView
-        android:id="@+id/userName"
+        android:id="@+id/contactName"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_weight="1"
