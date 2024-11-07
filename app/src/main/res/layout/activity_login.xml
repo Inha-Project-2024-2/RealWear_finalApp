@@ -56,13 +56,13 @@
 
     <Button
         android:id="@+id/LoginButton"
-        android:layout_width="208dp"
-        android:layout_height="50dp"
-        android:layout_marginTop="5dp"
+        android:layout_width="120dp"
+        android:layout_height="105dp"
+        android:layout_marginStart="20dp"
+        android:layout_marginTop="15dp"
         android:text="로그인"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/PasswordEditText" />
+        app:layout_constraintStart_toEndOf="@+id/IDEditText"
+        app:layout_constraintTop_toBottomOf="@id/TitleText" />
 
     <TextView
         android:id="@+id/FindInfoText"
@@ -74,7 +74,7 @@
         android:textSize="12sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/LoginButton" />
+        app:layout_constraintTop_toBottomOf="@+id/PasswordEditText" />
 
     <TextView
         android:id="@+id/SignUpText"
