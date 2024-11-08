@@ -47,6 +47,11 @@
             android:keepScreenOn="true">
             <!-- 화상통화 중 화면 꺼짐 방지 -->
         </activity>
+        <activity android:name=".meetingActivity"
+            android:screenOrientation="landscape"
+            android:exported="true"
+            android:keepScreenOn="true">
+        </activity>
     </application>
 
 </manifest>

@@ -12,9 +12,10 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.LinearLayoutManager
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.AdapterView
-import com.example.claude.MainActivity.CallState
 import org.json.JSONArray
 import java.util.UUID
 
@@ -25,6 +26,8 @@ class ContactListActivity : AppCompatActivity() {
 
     private val socketHandler = SocketHandler.getInstance()
     private var targetUserId: String? = null
+    private var isInitiator = false
+    private var isNegotiating = false
 
     private val userList = mutableListOf<Contact>()
 
@@ -54,8 +57,10 @@ class ContactListActivity : AppCompatActivity() {
 
         userListSpinner = findViewById(R.id.userListSpinner)
         contactAdapter = ContactAdapter(userList) { contact ->
-            val intent = Intent(this, MainActivity::class.java)
+            val intent = Intent(this, meetingActivity::class.java)
             intent.putExtra("contactName", contact.name) // 예: 이름을 다음 액티비티로 전달
+            intent.putExtra("CallState", "CALLING")
+            intent.putExtra("targetUserId", contact.name)
             startActivity(intent)
         }
 
@@ -93,16 +98,21 @@ class ContactListActivity : AppCompatActivity() {
         }
     }
 
+    // Register call events
     private fun registerCallEvents() {
-//        socketHandler.registerCallEvents(
-//            onCallReceived = { callerId ->
-//                Log.d("SDP", "Call received from: $callerId")
-//                runOnUiThread {
-//                    targetUserId = callerId
-//                    updateUIState(CallState.RECEIVING_CALL)
-//                }
-//            },
-//            onCallAccepted = { accepterId ->
+        socketHandler.registerCallEvents(
+            onCallReceived = { callerId ->
+                Log.d("SDP", "Call received from: $callerId")
+                runOnUiThread {
+                    targetUserId = callerId
+                    val intent = Intent(this, meetingActivity::class.java)
+                    intent.putExtra("contactName", targetUserId) // 예: 이름을 다음 액티비티로 전달
+                    intent.putExtra("CallState", "RECEIVING_CALL")
+                    intent.putExtra("targetUserId", targetUserId)
+                    startActivity(intent)
+                }
+            },
+            onCallAccepted = { accepterId ->
 //                Log.d("SDP", "Call accepted by: $accepterId")
 //                runOnUiThread {
 //                    if (isInitiator) {  // 통화 시작자만 offer를 생성
@@ -112,40 +122,40 @@ class ContactListActivity : AppCompatActivity() {
 //                        updateUIState(CallState.IN_CALL)
 //                    }
 //                }
-//            },
-//            onCallRejected = { rejecterId ->
+            },
+            onCallRejected = { rejecterId ->
 //                runOnUiThread {
 //                    updateUIState(CallState.IDLE)
 //                    showToast("통화가 거절되었습니다")
 //                }
-//            },
-//            onCallEnded = { enderId ->
+            },
+            onCallEnded = { enderId ->
 //                runOnUiThread {
 //                    endCall()
 //                }
-//            },
-//            onOffer = { callerId, offerSdp ->
+            },
+            onOffer = { callerId, offerSdp ->
 //                Log.d("SDP", "Received Offer SDP from $callerId:")
 //                Log.d("SDP", "Offer SDP: $offerSdp")
 //                runOnUiThread {
 //                    handleOffer(callerId, offerSdp)
 //                }
-//            },
-//            onAnswer = { answererId, answerSdp ->
+            },
+            onAnswer = { answererId, answerSdp ->
 //                Log.d("SDP", "Received Answer SDP from $answererId:")
 //                Log.d("SDP", "Answer SDP: $answerSdp")
 //                runOnUiThread {
 //                    handleAnswer(answerSdp)
 //                }
-//            },
-//            onIceCandidate = { senderId, candidateJson ->
+            },
+            onIceCandidate = { senderId, candidateJson ->
 //                Log.d("SDP", "Received ICE candidate from $senderId:")
 //                Log.d("SDP", "ICE candidate: $candidateJson")
 //                runOnUiThread {
 //                    handleIceCandidate(candidateJson)
 //                }
-//            }
-//        )
+            }
+        )
         socketHandler.socket?.on("userList") { args ->
             val users = (args[0] as JSONArray).let { array ->
                 List(array.length()) { i -> array.getString(i) }
