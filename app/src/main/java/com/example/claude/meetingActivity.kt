@@ -10,6 +10,8 @@ import com.example.claude.MainActivity.CallState
 import org.webrtc.PeerConnection
 import java.util.UUID
 import SocketHandler
+import android.Manifest
+import android.provider.Settings
 import android.view.View
 import android.widget.AdapterView
 import android.widget.Button
@@ -35,6 +37,7 @@ import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
 import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoTrack
+import java.util.concurrent.atomic.AtomicBoolean
 
 
 class meetingActivity:AppCompatActivity() {
@@ -45,6 +48,7 @@ class meetingActivity:AppCompatActivity() {
     private lateinit var endCallButton: Button
     private lateinit var eglBase: EglBase
 
+    private var isEndingCall = AtomicBoolean(false)
     private lateinit var localVideoTrack: VideoTrack
     private lateinit var localAudioTrack: AudioTrack
     private var remoteVideoTrack: VideoTrack? = null  // 추가
@@ -54,6 +58,7 @@ class meetingActivity:AppCompatActivity() {
 
     private var contactName: String? = null
     private var targetUserId: String? = null
+    private var myId: String? = null
     private var state: CallState? = null
 
     private var isInCall = false
@@ -61,6 +66,14 @@ class meetingActivity:AppCompatActivity() {
     private var socketHandler: SocketHandler? = null
     private var isInitiator = false
     private var isPeerConnectionCreated = false
+
+    companion object {
+        private val REQUIRED_PERMISSIONS = arrayOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO
+        )
+        private val TAG = MainActivity::class.java.simpleName
+    }
 
 //    intent.putExtra("contactName", contact.name) // 예: 이름을 다음 액티비티로 전달
 //    intent.putExtra("CallState", "CALLING")
@@ -100,6 +113,15 @@ class meetingActivity:AppCompatActivity() {
 
         }
 
+        myId = getDeviceUuid()
+
+    }
+
+    private fun getDeviceUuid(): String? {
+        return Settings.Secure.getString(
+            applicationContext.contentResolver,
+            Settings.Secure.ANDROID_ID
+        )
     }
 
     // Initialize views
@@ -112,12 +134,17 @@ class meetingActivity:AppCompatActivity() {
             endCall()
         }
 
-        localVideoView.init(eglBase.eglBaseContext, null)
-        localVideoView.setEnableHardwareScaler(true)
-        localVideoView.setMirror(true)
-        remoteVideoView.init(eglBase.eglBaseContext, null)
-        remoteVideoView.setEnableHardwareScaler(true)
-        remoteVideoView.setMirror(false)
+        localVideoView.apply {
+            init(eglBase.eglBaseContext, null)
+            setEnableHardwareScaler(true)
+            setMirror(true)
+        }
+
+        remoteVideoView.apply {
+            init(eglBase.eglBaseContext, null)
+            setEnableHardwareScaler(true)
+            setMirror(false)
+        }
 
 
     }
@@ -133,7 +160,7 @@ class meetingActivity:AppCompatActivity() {
 //                }
             },
             onCallAccepted = { accepterId ->
-                Log.d("SDP", "Call accepted by: $accepterId")
+                Log.d(TAG, "Call accepted by: $accepterId")
                 runOnUiThread {
                     if (isInitiator) {  // 통화 시작자만 offer를 생성
                         isNegotiating = false  // 협상 상태 초기화
@@ -144,39 +171,37 @@ class meetingActivity:AppCompatActivity() {
                     }
                 }
             },
-            onCallRejected = { rejecterId ->
+            onCallRejected = {
 //                runOnUiThread {
 //                    updateUIState(com.example.claude.MainActivity.CallState.IDLE)
 //                    showToast("통화가 거절되었습니다")
 //                }
             },
-            onCallEnded = { enderId ->
+            onCallEnded = {
                 runOnUiThread {
                     endCall()
                 }
             },
             onOffer = { callerId, offerSdp ->
-                Log.d("SDP", "Received Offer SDP from $callerId:")
-                Log.d("SDP", "Offer SDP: $offerSdp")
+                Log.d(TAG, "Received Offer SDP from $callerId:")
                 runOnUiThread {
                     handleOffer(callerId, offerSdp)
                 }
             },
             onAnswer = { answererId, answerSdp ->
-                Log.d("SDP", "Received Answer SDP from $answererId:")
-                Log.d("SDP", "Answer SDP: $answerSdp")
+                Log.d(TAG, "Received Answer SDP from $answererId:")
                 runOnUiThread {
                     handleAnswer(answerSdp)
                 }
             },
             onIceCandidate = { senderId, candidateJson ->
-                Log.d("SDP", "Received ICE candidate from $senderId:")
-                Log.d("SDP", "ICE candidate: $candidateJson")
+                Log.d(TAG, "Received ICE candidate from $senderId:")
                 runOnUiThread {
                     handleIceCandidate(candidateJson)
                 }
             }
         )
+        setupSocketListeners()
 //        socketHandler.socket?.on("userList") { args ->
 //            val users = (args[0] as JSONArray).let { array ->
 //                List(array.length()) { i -> array.getString(i) }
@@ -202,6 +227,32 @@ class meetingActivity:AppCompatActivity() {
         }
     }
 
+    private fun setupSocketListeners() {
+        socketHandler!!.socket?.apply {
+//                on("userList") { args ->
+//                    val users = (args[0] as JSONArray).let { array ->
+//                        List(array.length()) { i -> array.getString(i) }
+//                    }
+//                    runOnUiThread {
+//                        userList.clear()
+//                        userList.addAll(users.filter { it != socketHandler.getUserId() })
+//                        spinnerAdapter.notifyDataSetChanged()
+//                    }
+//                }
+
+            on("user-disconnected") { args ->
+                val disconnectedUserId = args[0] as String
+                runOnUiThread {
+                    if (targetUserId == disconnectedUserId) {
+                        endCall()
+                        statusText.text = "상대방이 연결을 종료했습니다"
+                    }
+//                    userList.remove(disconnectedUserId)
+//                    spinnerAdapter.notifyDataSetChanged()
+                }
+            }
+        }
+    }
 
     // First step for connect
     private fun firstStepForConnect(){
@@ -226,7 +277,7 @@ class meetingActivity:AppCompatActivity() {
                 socketHandler!!.sendCallAccept(callerId)
 
             } else {
-                Log.e("WebRTC", "Failed to initialize peer connection")
+                Log.e(TAG, "Failed to initialize peer connection")
                 statusText.text = "연결 설정에 실패했습니다"
                 endCall()
             }
@@ -310,390 +361,400 @@ class meetingActivity:AppCompatActivity() {
     }
 
     private fun createAndInitializePeerConnection() {
-        if (peerConnectionFactory == null) {
-            Log.e("WebRTC", "PeerConnectionFactory is null")
-            return
+        if (!isPeerConnectionFactoryInitialized()) {
+            Log.e(TAG, "PeerConnectionFactory is not initialized")
+            initializeWebRTC()
         }
 
-        createPeerConnection()
+        if (peerConnection == null) {
+            createPeerConnection()
+        }
 
         if (peerConnection == null) {
-            Log.e("WebRTC", "Failed to create PeerConnection")
-            statusText.text = "WebRTC 초기화에 실패했습니다"
+            Log.e(TAG, "Failed to create PeerConnection")
             return
         }
     }
 
+    private fun isPeerConnectionFactoryInitialized(): Boolean {
+        return this::peerConnectionFactory.isInitialized &&
+                localAudioTrack != null &&
+                localVideoTrack != null
+    }
+
     private fun createAndSendAnswer() {
-        Log.d("WebRTC", "Creating answer")
+        Log.d(TAG, "Creating answer")
         val mediaConstraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
         }
+
         peerConnection?.createAnswer(object : SdpObserver {
             override fun onCreateSuccess(sessionDescription: SessionDescription) {
+                val modifiedSdp = modifySdp(sessionDescription.description)
+                val finalDescription = SessionDescription(sessionDescription.type, modifiedSdp)
+
                 peerConnection?.setLocalDescription(object : SdpObserver {
                     override fun onSetSuccess() {
                         targetUserId?.let { userId ->
-                            socketHandler!!.sendAnswer(userId, sessionDescription.description)
+                            socketHandler?.sendAnswer(userId, finalDescription.description)
                         }
                         isNegotiating = false
                     }
 
+                    override fun onSetFailure(error: String?) {
+                        Log.e(TAG, "Failed to set local description: $error")
+                        isNegotiating = false
+                    }
+
                     override fun onCreateSuccess(p0: SessionDescription?) {}
-                    override fun onSetFailure(p0: String?) {
-                        isNegotiating = false
-                    }
-                    override fun onCreateFailure(p0: String?) {
-                        isNegotiating = false
-                    }
-                }, sessionDescription)
+                    override fun onCreateFailure(p0: String?) {}
+                }, finalDescription)
+            }
+
+            override fun onCreateFailure(error: String?) {
+                Log.e(TAG, "Failed to create answer: $error")
+                isNegotiating = false
             }
 
             override fun onSetSuccess() {}
-            override fun onSetFailure(p0: String?) {
-                isNegotiating = false
-            }
-            override fun onCreateFailure(p0: String?) {
-                isNegotiating = false
-            }
+            override fun onSetFailure(p0: String?) {}
         }, mediaConstraints)
     }
 
+    private fun modifySdp(sdpDescription: String): String {
+        val lines = sdpDescription.split("\r\n").toMutableList()
+        var videoSection = false
+        val modifiedLines = mutableListOf<String>()
+
+        for (line in lines) {
+            when {
+                line.startsWith("m=") -> {
+                    videoSection = line.startsWith("m=video")
+                    modifiedLines.add(line)
+                }
+                else -> {
+                    modifiedLines.add(line)
+                }
+            }
+
+            if (videoSection && line.startsWith("a=rtpmap")) {
+                modifiedLines.addAll(listOf(
+                    "a=rtcp-fb:* ccm fir",
+                    "a=rtcp-fb:* nack",
+                    "a=rtcp-fb:* nack pli",
+                    "a=rtcp-fb:* goog-remb"
+                ))
+            }
+        }
+
+        return modifiedLines.joinToString("\r\n")
+    }
 
 
     private fun initializeWebRTC() {
         try {
-            // WebRTC 초기화
-            val options = PeerConnectionFactory.InitializationOptions.builder(this)
-                .setEnableInternalTracer(true)
-                .setFieldTrials("WebRTC-H264HighProfile/Enabled/")
-                .createInitializationOptions()
-            PeerConnectionFactory.initialize(options)
-
-            val encoderFactory = DefaultVideoEncoderFactory(
-                eglBase.eglBaseContext,
-                true,
-                true
-            )
-            val decoderFactory = DefaultVideoDecoderFactory(eglBase.eglBaseContext)
-
-            // PeerConnectionFactory 생성
-//        val defaultConfig = PeerConnectionFactory.Options()
-//        val encoderFactory = createCustomVideoEncoderFactory()
-//        val decoderFactory = createCustomVideoDecoderFactory()
-
-            peerConnectionFactory = PeerConnectionFactory.builder()
-//            .setOptions(defaultConfig)
-                .setVideoEncoderFactory(encoderFactory)
-                .setVideoDecoderFactory(decoderFactory)
-                .setOptions(PeerConnectionFactory.Options().apply {
-                    disableNetworkMonitor = false
-                    disableEncryption = false
-                })
-                .createPeerConnectionFactory()
-            Log.d(
-                "WebRTC",
-                "PeerConnectionFactory initialized successfully: ${peerConnectionFactory != null}"
-            )
-
-            // 비디오 소스 설정
+            initializePeerConnectionFactory()
             initializeVideoSource()
-
-            // 오디오 소스 설정
             initializeAudioSource()
         } catch (e: Exception) {
-            Log.e("WebRTC", "Failed to initialize WebRTC", e)
-            e.printStackTrace()
+            Log.e(TAG, "Failed to initialize WebRTC", e)
         }
     }
 
+    private fun initializePeerConnectionFactory() {
+        val options = PeerConnectionFactory.InitializationOptions.builder(this)
+            .setEnableInternalTracer(true)
+            .setFieldTrials("WebRTC-H264HighProfile/Enabled/")
+            .createInitializationOptions()
+
+        PeerConnectionFactory.initialize(options)
+
+        val encoderFactory = DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true)
+        val decoderFactory = DefaultVideoDecoderFactory(eglBase.eglBaseContext)
+
+        peerConnectionFactory = PeerConnectionFactory.builder()
+            .setVideoEncoderFactory(encoderFactory)
+            .setVideoDecoderFactory(decoderFactory)
+            .setOptions(PeerConnectionFactory.Options().apply {
+                disableNetworkMonitor = false
+                disableEncryption = false
+            })
+            .createPeerConnectionFactory()
+    }
+
+    private fun initializeVideoSource() {
+        val surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
+        val videoSource = peerConnectionFactory.createVideoSource(false)
+
+        videoCapturer = createCameraCapturer()
+        videoCapturer?.apply {
+            initialize(surfaceTextureHelper, applicationContext, videoSource.capturerObserver)
+            startCapture(640, 480, 30)
+        }
+
+        localVideoTrack = peerConnectionFactory.createVideoTrack("video_track", videoSource).apply {
+            setEnabled(true)
+            addSink(localVideoView)
+        }
+    }
+
+    private fun initializeAudioSource() {
+        val audioConstraints = MediaConstraints().apply {
+            mandatory.addAll(listOf(
+                MediaConstraints.KeyValuePair("googEchoCancellation", "true"),
+                MediaConstraints.KeyValuePair("googNoiseSuppression", "true"),
+                MediaConstraints.KeyValuePair("googAutoGainControl", "true")
+            ))
+        }
+
+        val audioSource = peerConnectionFactory.createAudioSource(audioConstraints)
+        localAudioTrack = peerConnectionFactory.createAudioTrack("audio_track", audioSource)
+    }
+
+
     private fun createPeerConnection() {
-        val rtcConfig = PeerConnection.RTCConfiguration(
-            listOf(
-                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun.l.google.com:5349").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun1.l.google.com:3478").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun1.l.google.com:5349").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun2.l.google.com:5349").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun3.l.google.com:3478").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun3.l.google.com:5349").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun4.l.google.com:19302").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun4.l.google.com:5349").createIceServer(),
-                PeerConnection.IceServer.builder("turn:192.168.0.100:3478")
-                    .setUsername("test")
-                    .setPassword("test")
-                    .createIceServer()
-            )
-        ).apply {
+        val rtcConfig = createRtcConfiguration()
+        peerConnection = peerConnectionFactory.createPeerConnection(rtcConfig, createPeerConnectionObserver())
+        isPeerConnectionCreated = true
+
+        setupLocalTracks()
+    }
+
+    private fun createRtcConfiguration(): PeerConnection.RTCConfiguration {
+        val iceServers = listOf(
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+            PeerConnection.IceServer.builder("turn:222.112.209.235:3478")
+                .setUsername("test")
+                .setPassword("test123")
+                .createIceServer()
+        )
+
+        return PeerConnection.RTCConfiguration(iceServers).apply {
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
             tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
             keyType = PeerConnection.KeyType.ECDSA
-            iceTransportsType = PeerConnection.IceTransportsType.ALL
             enableDtlsSrtp = true
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
         }
-        val observer = object : PeerConnection.Observer {
-            override fun onIceCandidate(iceCandidate: IceCandidate) {
-                Log.d("ICE", "Generated local ICE candidate:")
-                Log.d("ICE", "SDP Mid: ${iceCandidate.sdpMid}")
-                Log.d("ICE", "SDP MLineIndex: ${iceCandidate.sdpMLineIndex}")
-                Log.d("ICE", "SDP: ${iceCandidate.sdp}")
+    }
 
+    private fun setupLocalTracks() {
+        peerConnection?.apply {
+            localVideoTrack?.let { track ->
+                addTrack(track).also { sender ->
+                    sender.setStreams(listOf(myId))
+                }
+            }
+            localAudioTrack?.let { track ->
+                addTrack(track).also { sender ->
+                    sender.setStreams(listOf(myId))
+                }
+            }
+        }
+    }
+
+    private fun createPeerConnectionObserver(): PeerConnection.Observer {
+        return object : PeerConnection.Observer {
+            override fun onIceCandidate(iceCandidate: IceCandidate) {
                 val candidateJson = JSONObject().apply {
                     put("sdpMid", iceCandidate.sdpMid)
                     put("sdpMLineIndex", iceCandidate.sdpMLineIndex)
                     put("candidate", iceCandidate.sdp)
                 }
                 targetUserId?.let { userId ->
-                    Log.d("ICE", "Sending ICE candidate to: $userId")
                     socketHandler!!.sendIceCandidate(userId, candidateJson.toString())
                 }
             }
 
             override fun onTrack(transceiver: RtpTransceiver) {
-                Log.d("WebRTC", "onTrack called: ${transceiver.receiver.track()?.kind()}")
                 val track = transceiver.receiver.track()
                 when (track) {
                     is VideoTrack -> {
-                        Log.d("WebRTC", "Video track received")
-                        remoteVideoTrack?.removeSink(remoteVideoView)  // 기존 sink 제거
-                        remoteVideoTrack = track
                         runOnUiThread {
-                            try {
-                                remoteVideoView.visibility = View.VISIBLE
-                                track.setEnabled(true)
-                                track.addSink(remoteVideoView)
-                                Log.d("WebRTC", "Remote video sink added successfully")
-                            } catch (e: Exception) {
-                                Log.e("WebRTC", "Error adding remote video sink", e)
-                                e.printStackTrace()
-                            }
+                            remoteVideoTrack?.removeSink(remoteVideoView)
+                            remoteVideoTrack = track
+                            remoteVideoView.visibility = View.VISIBLE
+                            remoteVideoView.setZOrderMediaOverlay(false)
+                            remoteVideoView.setEnableHardwareScaler(true)
+                            track.setEnabled(true)
+                            track.addSink(remoteVideoView)
                         }
                     }
                     is AudioTrack -> {
-                        Log.d("WebRTC", "Audio track received")
                         remoteAudioTrack = track
                         remoteAudioTrack?.setEnabled(true)
                     }
                 }
             }
 
+            private fun handleVideoTrack(track: VideoTrack) {
+                synchronized(this@meetingActivity) {
+                    remoteVideoTrack?.removeSink(remoteVideoView)
+                    remoteVideoTrack = track
+                }
+
+                runOnUiThread {
+                    remoteVideoView.visibility = View.VISIBLE
+                    remoteVideoView.setZOrderMediaOverlay(false)
+                    remoteVideoView.setEnableHardwareScaler(true)
+
+                    synchronized(this@meetingActivity) {
+                        track.setEnabled(true)
+                        track.addSink(remoteVideoView)
+                    }
+                }
+            }
+
+            private fun handleAudioTrack(track: AudioTrack) {
+                remoteAudioTrack = track
+                remoteAudioTrack?.setEnabled(true)
+            }
+
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
                 runOnUiThread {
                     when (newState) {
-
                         PeerConnection.PeerConnectionState.CONNECTED -> {
-                            statusText.text = "연결 완료"
-                            isInCall=true
+                            //updateUIState(com.example.claude.MainActivity.CallState.IN_CALL)
                         }
-
                         PeerConnection.PeerConnectionState.DISCONNECTED,
                         PeerConnection.PeerConnectionState.FAILED -> {
                             endCall()
                         }
-
                         else -> {}
                     }
                 }
             }
 
             override fun onSignalingChange(state: PeerConnection.SignalingState?) {
-                Log.d("WebRTC", "Signaling state changed to: $state")
                 when (state) {
                     PeerConnection.SignalingState.STABLE -> {
-                        isNegotiating = false  // 시그널링이 안정화되면 재협상 가능
-                        Log.d("WebRTC", "Signaling state is stable, isNegotiating set to false")
-                    }
-
-                    PeerConnection.SignalingState.CLOSED -> {
                         isNegotiating = false
-                        endCall()
-
                     }
-
+                    PeerConnection.SignalingState.CLOSED -> {
+                        if (isInCall) {
+                            cleanupAndEndCall()
+                        }
+                    }
                     else -> {}
                 }
             }
 
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                Log.d("WebRTC", "ICE Connection state changed to: $state")
-                when (state) {
-                    PeerConnection.IceConnectionState.CHECKING -> {
-                        Log.d("WebRTC", "ICE Checking in progress...")
-                    }
-
-                    PeerConnection.IceConnectionState.CONNECTED -> {
-                        Log.d("WebRTC", "ICE Connection Connected")
-                        runOnUiThread {
-                            statusText.text = "연결 완료"
-                            isInCall=true
-                        }
-                    }
-
-                    PeerConnection.IceConnectionState.FAILED -> {
-                        Log.e("WebRTC", "ICE Connection Failed")
-                        runOnUiThread {
-                            // 연결 재시도 로직
-                            retryConnection()
-                        }
-                    }
-
-                    PeerConnection.IceConnectionState.DISCONNECTED -> {
-                        Log.w("WebRTC", "ICE Connection Disconnected")
-                        runOnUiThread {
-                            // 재연결 시도
-                            handleDisconnection()
-                        }
-                    }
-
-                    else -> Log.d("WebRTC", "ICE Connection state: $state")
-                }
-            }
-
-            override fun onIceConnectionReceivingChange(receiving: Boolean) {
-                Log.d("WebRTC", "ICE connection receiving changed to: $receiving")
-                if (!receiving) {
-                    // ICE candidate를 더 이상 받지 못하는 상황 처리
-                    runOnUiThread {
-                        statusText.text = "네트워크 연결이 불안정합니다"
-                    }
-                }
-            }
-
-            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
-                when (state) {
-                    PeerConnection.IceGatheringState.GATHERING -> {
-                        Log.d("WebRTC", "ICE gathering is in progress")
-                    }
-
-                    PeerConnection.IceGatheringState.COMPLETE -> {
-                        Log.d("WebRTC", "ICE gathering completed")
-                        // ICE candidate 수집이 완료되었을 때의 처리
-                    }
-
-                    else -> {
-                        Log.d("WebRTC", "ICE gathering state changed to: $state")
-                    }
-                }
-            }
-
-            override fun onRemoveStream(stream: MediaStream?) {
-                // 스트림이 제거되었을 때의 처리
                 runOnUiThread {
-                    remoteVideoView.release()
+                    when (state) {
+                        PeerConnection.IceConnectionState.CHECKING -> {
+                            //updateUIState(com.example.claude.MainActivity.CallState.CALLING)
+                        }
+                        PeerConnection.IceConnectionState.CONNECTED -> {
+                            //updateUIState(com.example.claude.MainActivity.CallState.IN_CALL)
+                        }
+                        PeerConnection.IceConnectionState.FAILED -> {
+                            if (isInCall) {
+                                retryConnection()
+                            }
+                        }
+                        PeerConnection.IceConnectionState.DISCONNECTED -> {
+                            if (isInCall) {
+                                handleDisconnection()
+                            }
+                        }
+                        PeerConnection.IceConnectionState.CLOSED -> {
+                            endCall()
+                        }
+                        else -> {}
+                    }
                 }
-            }
-
-            override fun onDataChannel(dataChannel: DataChannel?) {
-                // DataChannel이 생성되었을 때의 처리
-                dataChannel?.registerObserver(object : DataChannel.Observer {
-                    override fun onBufferedAmountChange(l: Long) {}
-
-                    override fun onStateChange() {
-                        Log.d("WebRTC", "DataChannel state changed: ${dataChannel.state()}")
-                    }
-
-                    override fun onMessage(buffer: DataChannel.Buffer) {
-                        // 메시지 수신 처리
-                    }
-                })
             }
 
             override fun onRenegotiationNeeded() {
-                Log.d("WebRTC", "onRenegotiationNeeded called, isInitiator: $isInitiator, isInCall: $isInCall")
                 if (isInitiator) {
                     runOnUiThread {
                         synchronized(this@meetingActivity) {
                             if (!isNegotiating) {
                                 isNegotiating = true
                                 createAndSendOffer()
-                            } else {
-                                Log.d("WebRTC", "Negotiation already in progress")
                             }
                         }
                     }
                 }
             }
 
-            override fun onAddTrack(
-                rtpReceiver: RtpReceiver?,
-                mediaStreams: Array<out MediaStream>?
-            ) {
-                // onTrack으로 대체되었으므로 여기서는 별도 처리하지 않음
-                Log.d("WebRTC", "onAddTrack called (deprecated)")
-            }
-
-            override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {
-                // 제거된 ICE candidate 처리
-                candidates?.forEach { candidate ->
-                    Log.d("WebRTC", "ICE candidate removed: ${candidate.sdp}")
-                    peerConnection?.removeIceCandidates(arrayOf(candidate))
+            // Required override methods with minimal implementation
+            override fun onIceConnectionReceivingChange(receiving: Boolean) {
+                if (!receiving) {
+                    runOnUiThread { statusText.text = "네트워크 연결이 불안정합니다" }
                 }
             }
 
-            override fun onAddStream(stream: MediaStream?) {
-                // Deprecated - onTrack을 사용하므로 여기서는 처리하지 않음
-                Log.d("WebRTC", "onAddStream called (deprecated)")
-            }
-
+            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
+            override fun onAddStream(stream: MediaStream?) {}
+            override fun onRemoveStream(stream: MediaStream?) {}
+            override fun onDataChannel(dataChannel: DataChannel?) {}
+            override fun onAddTrack(rtpReceiver: RtpReceiver?, mediaStreams: Array<out MediaStream>?) {}
+            override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {}
         }
+    }
 
-        peerConnection = peerConnectionFactory.createPeerConnection(rtcConfig, observer)
-        isPeerConnectionCreated = true
-        if (peerConnection == null) {
-            Log.i("peerConnection", "isNull")
-        }
+    private fun cleanupAndEndCall() {
+        isInCall = false
+        isNegotiating = false
 
+        remoteVideoTrack?.removeSink(remoteVideoView)
+        remoteVideoTrack = null
+        remoteAudioTrack = null
 
-//        val localStream = peerConnectionFactory.createLocalMediaStream("local-stream")
-        peerConnection?.addTransceiver(
-            MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
-            RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.SEND_RECV)
-        )
+        peerConnection?.dispose()
+        peerConnection = null
 
-        peerConnection?.addTransceiver(
-            MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO,
-            RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.SEND_RECV)
-        )
-
-        localVideoTrack?.let { videoTrack ->
-            peerConnection?.addTrack(videoTrack)
-            Log.d("WebRTC", "Local video track added to PeerConnection")
-        }
-
-        localAudioTrack?.let { audioTrack ->
-            peerConnection?.addTrack(audioTrack)
-            Log.d("WebRTC", "Local audio track added to PeerConnection")
-        }
-
-
+        //updateUIState(com.example.claude.MainActivity.CallState.IDLE)
+        finish()
     }
 
     private fun endCall() {
-        isInitiator = false
-        isNegotiating = false  // 초기화
-        targetUserId?.let { userId ->
-            socketHandler!!.sendEndCall(userId)
+        if (!isEndingCall.compareAndSet(false, true)) {
+            return
         }
 
-        peerConnection?.close()
+        try {
+            if (isInCall) {
+                targetUserId?.let { userId ->
+                    socketHandler!!.sendEndCall(userId)
+                }
+                runOnUiThread { cleanupResources() }
+            }
+        } finally {
+            isEndingCall.set(false)
+        }
+    }
+    private fun cleanupResources() {
+        isInCall = false
+        isNegotiating = false
+
+        remoteVideoTrack?.removeSink(remoteVideoView)
+        remoteVideoTrack = null
+        remoteAudioTrack = null
+
+        peerConnection?.dispose()
         peerConnection = null
 
-        SocketHandlerTOSS.setSocketHandler(socketHandler!!)
         finish()
     }
 
     private fun retryConnection() {
-        peerConnection?.let { conn ->
-            // 기존 연결 종료
-            conn.close()
-            // 새로운 연결 시도
+        synchronized(this) {
+            if (!isInCall) return
+
+            peerConnection?.dispose()
+            peerConnection = null
+            isNegotiating = false
+
             createPeerConnection()
-            createAndSendOffer()
+            if (isInitiator) {
+                createAndSendOffer()
+            }
         }
     }
     private fun handleDisconnection() {
@@ -704,22 +765,13 @@ class meetingActivity:AppCompatActivity() {
             if (isInCall) {
                 retryConnection()
             }
-        }, 5000) // 5초 후 재시도
+        }, 3000) // 3초 후 재시도
     }
 
     private fun createAndSendOffer() {
-        Log.d("WebRTC", "Attempting to create and send offer. isNegotiating: $isNegotiating")
         if (peerConnection == null) {
-            Log.e("WebRTC", "PeerConnection is null when trying to create offer")
-            isNegotiating = false
+            Log.e(TAG, "PeerConnection is null when trying to create offer")
             return
-        }
-        synchronized(this) {
-            if (isNegotiating) {
-                Log.d("WebRTC", "Skipping create offer - already negotiating")
-                return
-            }
-            isNegotiating = true
         }
 
         val mediaConstraints = MediaConstraints().apply {
@@ -727,107 +779,58 @@ class meetingActivity:AppCompatActivity() {
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
         }
 
-        try {
-            peerConnection?.createOffer(object : SdpObserver {
-                override fun onCreateSuccess(sessionDescription: SessionDescription) {
-                    Log.d("WebRTC", "Offer created successfully")
+        peerConnection?.createOffer(object : SdpObserver {
+            override fun onCreateSuccess(sessionDescription: SessionDescription) {
+                val modifiedSdp = SessionDescription(
+                    sessionDescription.type,
+                    modifySdp(sessionDescription.description)
+                )
 
-                    // Local Description 설정
-                    peerConnection?.setLocalDescription(object : SdpObserver {
-                        override fun onSetSuccess() {
-                            Log.d("WebRTC", "Local description set successfully")
-                            targetUserId?.let { userId ->
-                                socketHandler!!.sendOffer(userId, sessionDescription.description)
-                                Log.d("WebRTC", "Offer sent to $userId")
-                            }
-                        }
+                setLocalDescriptionAndSendOffer(modifiedSdp)
+            }
 
-                        override fun onSetFailure(error: String?) {
-                            Log.e("WebRTC", "Failed to set local description: $error")
-                            isNegotiating = false
-                        }
+            override fun onCreateFailure(error: String?) {
+                Log.e(TAG, "Offer creation failed: $error")
+                isNegotiating = false
+            }
 
-                        override fun onCreateSuccess(p0: SessionDescription?) {}
-                        override fun onCreateFailure(p0: String?) {}
-                    }, sessionDescription)
+            override fun onSetSuccess() {}
+            override fun onSetFailure(error: String?) {}
+        }, mediaConstraints)
+    }
+
+    private fun setLocalDescriptionAndSendOffer(sessionDescription: SessionDescription) {
+        peerConnection?.setLocalDescription(object : SdpObserver {
+            override fun onSetSuccess() {
+                targetUserId?.let { userId ->
+                    socketHandler!!.sendOffer(userId, sessionDescription.description)
                 }
+            }
 
-                override fun onCreateFailure(error: String?) {
-                    Log.e("WebRTC", "Offer creation failed: $error")
-                    isNegotiating = false
-                }
+            override fun onSetFailure(error: String?) {
+                Log.e(TAG, "Failed to set local description: $error")
+                isNegotiating = false
+            }
 
-                override fun onSetSuccess() {}
-                override fun onSetFailure(error: String?) {
-                    Log.e("WebRTC", "Offer set failed: $error")
-                    isNegotiating = false
-                }
-            }, mediaConstraints)
-        } catch (e: Exception) {
-            Log.e("WebRTC", "Exception during offer creation", e)
-            isNegotiating = false
-        }
+            override fun onCreateSuccess(p0: SessionDescription?) {}
+            override fun onCreateFailure(p0: String?) {}
+        }, sessionDescription)
     }
 
 
-
-    private fun initializeVideoSource() {
-        val surfaceTextureHelper =
-            SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
-        val videoSource = peerConnectionFactory.createVideoSource(false)
-
-        videoCapturer = createCameraCapturer()
-        videoCapturer?.initialize(
-            surfaceTextureHelper,
-            applicationContext,
-            videoSource.capturerObserver
-        )
-        videoCapturer?.startCapture(640, 480, 30)
-
-        localVideoTrack = peerConnectionFactory.createVideoTrack("video_track", videoSource).apply {
-            setEnabled(true)  // VideoTrack 활성화
-            addSink(localVideoView)
-        }
-    }
-
-    private fun initializeAudioSource() {
-        val audioConstraints = MediaConstraints()
-        audioConstraints.mandatory.add(
-            MediaConstraints.KeyValuePair("googEchoCancellation", "true")
-        )
-        audioConstraints.mandatory.add(
-            MediaConstraints.KeyValuePair("googNoiseSuppression", "true")
-        )
-        audioConstraints.mandatory.add(
-            MediaConstraints.KeyValuePair("googAutoGainControl", "true")
-        )
-
-        val audioSource = peerConnectionFactory.createAudioSource(audioConstraints)
-        localAudioTrack = peerConnectionFactory.createAudioTrack("audio_track", audioSource)
-    }
 
     private fun createCameraCapturer(): CameraVideoCapturer? {
         val cameraEnumerator = Camera2Enumerator(this)
         val deviceNames = cameraEnumerator.deviceNames
 
-        // 전면 카메라 먼저 시도
-        deviceNames.forEach { deviceName ->
-            if (cameraEnumerator.isFrontFacing(deviceName)) {
-                val capturer = cameraEnumerator.createCapturer(deviceName, null)
-                if (capturer != null) {
-                    return capturer
-                }
-            }
+        // Try front camera first
+        deviceNames.firstOrNull { cameraEnumerator.isFrontFacing(it) }?.let {
+            return cameraEnumerator.createCapturer(it, null)
         }
 
-        // 후면 카메라 시도
-        deviceNames.forEach { deviceName ->
-            if (cameraEnumerator.isBackFacing(deviceName)) {
-                val capturer = cameraEnumerator.createCapturer(deviceName, null)
-                if (capturer != null) {
-                    return capturer
-                }
-            }
+        // Try back camera if front camera failed
+        deviceNames.firstOrNull { cameraEnumerator.isBackFacing(it) }?.let {
+            return cameraEnumerator.createCapturer(it, null)
         }
 
         return null

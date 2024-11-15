@@ -38,6 +38,7 @@ class ContactListActivity : AppCompatActivity() {
 
     companion object {
         private const val PERMISSION_REQUEST_CODE = 100  // 임의의 정수값
+        private val TAG = MainActivity::class.java.simpleName
     }
 
     private val userList = mutableListOf<Contact>()
@@ -134,7 +135,7 @@ class ContactListActivity : AppCompatActivity() {
     private fun registerCallEvents() {
         socketHandler.registerCallEvents(
             onCallReceived = { callerId ->
-                Log.d("SDP", "Call received from: $callerId")
+                Log.d(TAG, "Call received from: $callerId")
                 runOnUiThread {
                     targetUserId = callerId
                     // Set parameters for the next activity
@@ -149,7 +150,7 @@ class ContactListActivity : AppCompatActivity() {
                     startActivity(intent)
                 }
             },
-            onCallAccepted = { accepterId ->
+            onCallAccepted = {
 //                Log.d("SDP", "Call accepted by: $accepterId")
 //                runOnUiThread {
 //                    if (isInitiator) {  // 통화 시작자만 offer를 생성
@@ -160,27 +161,25 @@ class ContactListActivity : AppCompatActivity() {
 //                    }
 //                }
             },
-            onCallRejected = { rejecterId ->
+            onCallRejected = {
 //                runOnUiThread {
 //                    updateUIState(CallState.IDLE)
 //                    showToast("통화가 거절되었습니다")
 //                }
             },
-            onCallEnded = { enderId ->
+            onCallEnded = {
 //                runOnUiThread {
 //                    endCall()
 //                }
             },
             onOffer = { callerId, offerSdp ->
-//                Log.d("SDP", "Received Offer SDP from $callerId:")
-//                Log.d("SDP", "Offer SDP: $offerSdp")
+//                Log.d(TAG, "Received Offer SDP from $callerId:")
 //                runOnUiThread {
 //                    handleOffer(callerId, offerSdp)
 //                }
             },
-            onAnswer = { answererId, answerSdp ->
-//                Log.d("SDP", "Received Answer SDP from $answererId:")
-//                Log.d("SDP", "Answer SDP: $answerSdp")
+            onAnswer = { _, answerSdp ->
+//                Log.d(TAG, "Received Answer SDP from $answererId:")
 //                runOnUiThread {
 //                    handleAnswer(answerSdp)
 //                }
@@ -193,28 +192,34 @@ class ContactListActivity : AppCompatActivity() {
 //                }
             }
         )
-        socketHandler.socket?.on("userList") { args ->
-            val users = (args[0] as JSONArray).let { array ->
-                List(array.length()) { i -> array.getString(i) }
-            }
-            runOnUiThread {
-                userList.clear()
-                userList.addAll(users.filter { it != socketHandler.getUserId() }.map { Contact(it, R.drawable.humanicon) }) // 자신을 제외한 사용자만 표시 // 자신을 제외한 사용자만 표시
-                contactAdapter.notifyDataSetChanged()
-            }
-        }
+        setupSocketListeners()
+    }
 
-        // 사용자 연결 해제 이벤트 추가
-        socketHandler.socket?.on("user-disconnected") { args ->
-            val disconnectedUserId = args[0] as String
-            runOnUiThread {
+    private fun setupSocketListeners() {
+        socketHandler.socket?.apply {
+            on("userList") { args ->
+                val users = (args[0] as JSONArray).let { array ->
+                    List(array.length()) { i -> array.getString(i) }
+                }
+                runOnUiThread {
+                    userList.clear()
+                    userList.addAll(users.filter { it != socketHandler.getUserId() }.map { Contact(it, R.drawable.humanicon) }) // 자신을 제외한 사용자만 표시 // 자신을 제외한 사용자만 표시
+                    contactAdapter.notifyDataSetChanged()
+                }
+            }
 
-                userList.removeIf { it.name == disconnectedUserId }
-                contactAdapter.notifyDataSetChanged()
+            on("user-disconnected") { args ->
+                val disconnectedUserId = args[0] as String
+                runOnUiThread {
+                    if (targetUserId == disconnectedUserId) {
+                        statusText.text = "상대방이 연결을 종료했습니다"
+                    }
+                    userList.removeIf { it.name == disconnectedUserId }
+                    contactAdapter.notifyDataSetChanged()
+                }
             }
         }
     }
-
     override fun onDestroy() {
         super.onDestroy()
         socketHandler.disconnect()
