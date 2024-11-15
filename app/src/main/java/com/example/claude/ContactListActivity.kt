@@ -1,5 +1,6 @@
 package com.example.claude
 
+import android.Manifest
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -11,11 +12,14 @@ import android.widget.ImageView
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.LinearLayoutManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.AdapterView
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import java.util.UUID
 
@@ -26,8 +30,15 @@ class ContactListActivity : AppCompatActivity() {
 
     private val socketHandler = SocketHandler.getInstance()
     private var targetUserId: String? = null
-    private var isInitiator = false
-    private var isNegotiating = false
+
+    private val requiredPermissions = arrayOf(
+        Manifest.permission.CAMERA,
+        Manifest.permission.RECORD_AUDIO
+    )
+
+    companion object {
+        private const val PERMISSION_REQUEST_CODE = 100  // 임의의 정수값
+    }
 
     private val userList = mutableListOf<Contact>()
 
@@ -36,12 +47,26 @@ class ContactListActivity : AppCompatActivity() {
         setContentView(R.layout.activity_contact_list)
 
         // Initialize views and connect to signaling server
+        if (!checkPermissions()) {
+            requestPermissions()
+        }
         setupViews()
         connectToSignalingServer()
 
 
 
     }
+    // Request permission to access the camera and microphone
+    private fun checkPermissions(): Boolean {
+        return requiredPermissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun requestPermissions() {
+        ActivityCompat.requestPermissions(this, requiredPermissions, PERMISSION_REQUEST_CODE)
+    }
+
 
     private fun setupViews() {
         statusText = findViewById(R.id.ServerStatus)
@@ -57,10 +82,17 @@ class ContactListActivity : AppCompatActivity() {
 
         userListSpinner = findViewById(R.id.userListSpinner)
         contactAdapter = ContactAdapter(userList) { contact ->
+
+
+            // Set parameters for the next activity
             val intent = Intent(this, meetingActivity::class.java)
             intent.putExtra("contactName", contact.name) // 예: 이름을 다음 액티비티로 전달
             intent.putExtra("CallState", "CALLING")
             intent.putExtra("targetUserId", contact.name)
+
+            // Save SocketHandler instance
+            SocketHandlerTOSS.setSocketHandler(socketHandler)
+
             startActivity(intent)
         }
 
@@ -105,10 +137,15 @@ class ContactListActivity : AppCompatActivity() {
                 Log.d("SDP", "Call received from: $callerId")
                 runOnUiThread {
                     targetUserId = callerId
+                    // Set parameters for the next activity
                     val intent = Intent(this, meetingActivity::class.java)
                     intent.putExtra("contactName", targetUserId) // 예: 이름을 다음 액티비티로 전달
                     intent.putExtra("CallState", "RECEIVING_CALL")
                     intent.putExtra("targetUserId", targetUserId)
+
+                    // Save SocketHandler instance
+                    SocketHandlerTOSS.setSocketHandler(socketHandler)
+
                     startActivity(intent)
                 }
             },
@@ -176,6 +213,11 @@ class ContactListActivity : AppCompatActivity() {
                 contactAdapter.notifyDataSetChanged()
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        socketHandler.disconnect()
     }
 
 }
